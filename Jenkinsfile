@@ -6,15 +6,14 @@ pipeline {
         maven 'Maven 3.9'
     }
 
-    /* ────────────────  global variables ──────────────── */
+    /* global variables */
     environment {
-        DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'   // fixed value for Docker Hub
-        DOCKER_REGISTRY_CRED = 'dockerhub-creds'               // ID you added in Jenkins
-        DOCKER_NAMESPACE     = 'umez57'                        // <── your Docker-Hub username
+        DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'
+        DOCKER_REGISTRY_CRED = 'dockerhub-creds'
+        DOCKER_NAMESPACE     = 'umez57'
         IMAGE_NAME           = 'inventory-service'
     }
 
-    /* ───────────────────── stages ────────────────────── */
     stages {
         stage('Checkout') {
             steps { checkout scm }
@@ -36,18 +35,13 @@ pipeline {
             }
         }
 
-        /* ---------- NEW: build & push with docker-pipeline DSL ---------- */
         stage('Docker Build & Push') {
             steps {
                 dir('inventory-service') {
-
-                    // ① build the container image (returns a DockerImage object)
                     def img = docker.build("${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
-
-                    // ② log in, push both tags, then auto-logout
                     docker.withRegistry(env.DOCKER_REGISTRY_URL, env.DOCKER_REGISTRY_CRED) {
-                        img.push()                         // pushes the “latest” tag
-                        img.push("${env.BUILD_NUMBER}")    // pushes the numeric tag
+                        img.push()                       // latest
+                        img.push("${env.BUILD_NUMBER}")  // numeric tag
                     }
                 }
             }
@@ -65,7 +59,6 @@ pipeline {
         }
     }
 
-    /* ───────────────────── post steps ─────────────────── */
     post {
         always {
             archiveArtifacts artifacts: 'inventory-service/target/*.jar', fingerprint: true
