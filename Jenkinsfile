@@ -6,14 +6,15 @@ pipeline {
         maven 'Maven 3.9'
     }
 
+    /* ---------- GLOBAL ENV ---------- */
     environment {
-        /* ── Docker Hub info ───────────────────────────── */
         DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'
-        DOCKER_REGISTRY_CRED = 'dockerhub-creds'   // ID you created in Jenkins
-        DOCKER_NAMESPACE     = 'umez57'            // ← your Docker Hub user/org
+        DOCKER_REGISTRY_CRED = 'dockerhub-creds'      // Jenkins creds ID
+        DOCKER_NAMESPACE     = 'umez57'               // Docker Hub user/org
         IMAGE_NAME           = 'inventory-service'
     }
 
+    /* ---------- STAGES ---------- */
     stages {
 
         stage('Checkout') {
@@ -40,18 +41,19 @@ pipeline {
             steps {
                 script {
                     dir('inventory-service') {
-                        /* build the image */
+
+                        // Build the image
                         def img = docker.build(
                             "${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
                         )
 
-                        /* login + push (handled by withRegistry) */
+                        // Login & push
                         docker.withRegistry(
                             env.DOCKER_REGISTRY_URL,
                             env.DOCKER_REGISTRY_CRED
                         ) {
-                            img.push()                       // latest tag
-                            img.push("${env.BUILD_NUMBER}")  // numeric tag
+                            img.push()                      // latest tag
+                            img.push("${env.BUILD_NUMBER}") // numeric tag
                         }
                     }
                 }
@@ -62,14 +64,15 @@ pipeline {
             when { branch 'main' }
             steps {
                 sh """
-                    kubectl set image deployment/${IMAGE_NAME} \
-                      ${IMAGE_NAME}=${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER} \
-                      --namespace=staging
+                  kubectl set image deployment/${IMAGE_NAME} \
+                    ${IMAGE_NAME}=${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER} \
+                    --namespace=staging
                 """
             }
         }
     }
 
+    /* ---------- POST ACTIONS ---------- */
     post {
         always {
             archiveArtifacts artifacts: 'inventory-service/target/*.jar',
