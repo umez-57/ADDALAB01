@@ -1,71 +1,79 @@
 pipeline {
-  agent any
+    agent any
 
-  tools {
-    jdk 'jdk-17'
-    maven 'Maven 3.9'
-  }
-
-  environment {
-    DOCKER_REGISTRY = 'docker.io/youruser'
-    IMAGE_NAME      = 'inventory-service'
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    tools {
+        jdk   'jdk-17'
+        maven 'Maven 3.9'
     }
 
-    stage('Build & Test') {
-      steps {
-        dir('inventory-service') {
-          sh './mvnw clean test'
+    /* ────────────────  global variables ──────────────── */
+    environment {
+        DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'   // fixed value for Docker Hub
+        DOCKER_REGISTRY_CRED = 'dockerhub-creds'               // ID you added in Jenkins
+        DOCKER_NAMESPACE     = 'umez57'                        // <── your Docker-Hub username
+        IMAGE_NAME           = 'inventory-service'
+    }
+
+    /* ───────────────────── stages ────────────────────── */
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
         }
-      }
-    }
 
-    stage('Package') {
-      steps {
-        dir('inventory-service') {
-          sh './mvnw package -DskipTests'
+        stage('Build & Test') {
+            steps {
+                dir('inventory-service') {
+                    sh './mvnw clean test'
+                }
+            }
         }
-      }
-    }
 
-    stage('Docker Build & Push') {
-      steps {
-        script {
-          def tag = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
-          dir('inventory-service') {
-            sh "docker build -t ${tag} ."
-          }
-          sh "docker push ${tag}"
+        stage('Package') {
+            steps {
+                dir('inventory-service') {
+                    sh './mvnw package -DskipTests'
+                }
+            }
         }
-      }
+
+        /* ---------- NEW: build & push with docker-pipeline DSL ---------- */
+        stage('Docker Build & Push') {
+            steps {
+                dir('inventory-service') {
+
+                    // ① build the container image (returns a DockerImage object)
+                    def img = docker.build("${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
+
+                    // ② log in, push both tags, then auto-logout
+                    docker.withRegistry(env.DOCKER_REGISTRY_URL, env.DOCKER_REGISTRY_CRED) {
+                        img.push()                         // pushes the “latest” tag
+                        img.push("${env.BUILD_NUMBER}")    // pushes the numeric tag
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when { branch 'main' }
+            steps {
+                sh """
+                    kubectl set image deployment/${IMAGE_NAME} \
+                      ${IMAGE_NAME}=${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER} \
+                      --namespace=staging
+                """
+            }
+        }
     }
 
-    stage('Deploy to Staging') {
-      when { branch 'main' }
-      steps {
-        sh """
-          kubectl set image deployment/${IMAGE_NAME} \
-            ${IMAGE_NAME}=${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.BUILD_NUMBER} \
-            --namespace=staging
-        """
-      }
+    /* ───────────────────── post steps ─────────────────── */
+    post {
+        always {
+            archiveArtifacts artifacts: 'inventory-service/target/*.jar', fingerprint: true
+        }
+        failure {
+            mail to: 'team@example.com',
+                 subject: "Build ${currentBuild.fullDisplayName} Failed",
+                 body: "See ${env.BUILD_URL}"
+        }
     }
-  }
-
-  post {
-    always {
-      archiveArtifacts artifacts: 'inventory-service/target/*.jar', fingerprint: true
-    }
-    failure {
-      mail to: 'team@example.com',
-           subject: "Build ${currentBuild.fullDisplayName} Failed",
-           body: "See ${env.BUILD_URL}"
-    }
-  }
 }
