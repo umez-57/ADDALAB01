@@ -6,15 +6,16 @@ pipeline {
         maven 'Maven 3.9'
     }
 
-    /* global variables */
     environment {
+        /* ── Docker Hub info ───────────────────────────── */
         DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'
-        DOCKER_REGISTRY_CRED = 'dockerhub-creds'
-        DOCKER_NAMESPACE     = 'umez57'
+        DOCKER_REGISTRY_CRED = 'dockerhub-creds'   // ID you created in Jenkins
+        DOCKER_NAMESPACE     = 'umez57'            // ← your Docker Hub user/org
         IMAGE_NAME           = 'inventory-service'
     }
 
     stages {
+
         stage('Checkout') {
             steps { checkout scm }
         }
@@ -37,11 +38,21 @@ pipeline {
 
         stage('Docker Build & Push') {
             steps {
-                dir('inventory-service') {
-                    def img = docker.build("${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
-                    docker.withRegistry(env.DOCKER_REGISTRY_URL, env.DOCKER_REGISTRY_CRED) {
-                        img.push()                       // latest
-                        img.push("${env.BUILD_NUMBER}")  // numeric tag
+                script {
+                    dir('inventory-service') {
+                        /* build the image */
+                        def img = docker.build(
+                            "${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                        )
+
+                        /* login + push (handled by withRegistry) */
+                        docker.withRegistry(
+                            env.DOCKER_REGISTRY_URL,
+                            env.DOCKER_REGISTRY_CRED
+                        ) {
+                            img.push()                       // latest tag
+                            img.push("${env.BUILD_NUMBER}")  // numeric tag
+                        }
                     }
                 }
             }
@@ -61,7 +72,8 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'inventory-service/target/*.jar', fingerprint: true
+            archiveArtifacts artifacts: 'inventory-service/target/*.jar',
+                             fingerprint: true
         }
         failure {
             mail to: 'team@example.com',
