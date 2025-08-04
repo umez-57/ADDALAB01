@@ -6,16 +6,21 @@ pipeline {
         maven 'Maven 3.9'
     }
 
+    /* ---------- GLOBAL ENV ---------- */
     environment {
         DOCKER_REGISTRY_URL  = 'https://index.docker.io/v1/'
-        DOCKER_REGISTRY_CRED = 'dockerhub-creds'
-        DOCKER_NAMESPACE     = 'umez57'
+        DOCKER_REGISTRY_CRED = 'dockerhub-creds'      // your Jenkins Credentials ID
+        DOCKER_NAMESPACE     = 'umez57'               // Docker Hub user/org
         IMAGE_NAME           = 'inventory-service'
     }
 
+    /* ---------- STAGES ---------- */
     stages {
+
         stage('Checkout') {
-            steps { checkout scm }
+            steps {
+                checkout scm
+            }
         }
 
         stage('Build & Test') {
@@ -38,15 +43,19 @@ pipeline {
             steps {
                 script {
                     dir('inventory-service') {
+
+                        // 1) Build the image
                         def img = docker.build(
-                          "${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                            "${DOCKER_NAMESPACE}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
                         )
+
+                        // 2) Login & Push both "latest" and build-number tags
                         docker.withRegistry(
-                          env.DOCKER_REGISTRY_URL,
-                          env.DOCKER_REGISTRY_CRED
+                            env.DOCKER_REGISTRY_URL,
+                            env.DOCKER_REGISTRY_CRED
                         ) {
-                            img.push()                      // latest
-                            img.push("${env.BUILD_NUMBER}") // numbered tag
+                            img.push()                      // pushes :latest
+                            img.push("${env.BUILD_NUMBER}") // pushes :<build_number>
                         }
                     }
                 }
@@ -55,7 +64,10 @@ pipeline {
 
         stage('Deploy to Staging') {
             when {
-                expression { env.BRANCH_NAME == 'main' }
+                expression {
+                    // only run on the 'main' branch
+                    return env.BRANCH_NAME == 'main'
+                }
             }
             steps {
                 sh """
@@ -67,6 +79,7 @@ pipeline {
         }
     }
 
+    /* ---------- POST ACTIONS ---------- */
     post {
         always {
             archiveArtifacts artifacts: 'inventory-service/target/*.jar', fingerprint: true
